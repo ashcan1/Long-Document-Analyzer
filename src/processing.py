@@ -1,5 +1,22 @@
+import tiktoken
 from pydantic import ValidationError
 from src.models import AnalysisResult
+
+# The encoding for GPT-4o — tells tiktoken how to split text into tokens
+ENCODING = tiktoken.encoding_for_model("gpt-4o")
+
+# GPT-4o context window limit
+MAX_TOKENS = 128_000
+
+
+def count_tokens(text: str) -> int:
+    """Returns the number of tokens in the text."""
+    return len(ENCODING.encode(text))
+
+
+def fits_in_context(text: str) -> bool:
+    """Returns True if the text fits in one GPT-4o request."""
+    return count_tokens(text) <= MAX_TOKENS
 
 
 def extract_text(file) -> str:
