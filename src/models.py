@@ -4,7 +4,7 @@ __all__ = ["AnalysisResult", "ValidationError"]
 
 
 class AnalysisResult(BaseModel):
-    summary: str
+    summary: str  
     key_points: list[str]
     confidence: float = 1.0
 
