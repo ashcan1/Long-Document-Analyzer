@@ -1,6 +1,6 @@
 import streamlit as st
 
-from src.processing import clean_text, extract_text, count_tokens, fits_in_context, MAX_TOKENS
+from src.processing import clean_text, extract_text, count_tokens, fits_in_context, MAX_TOKENS, chunk_text
 
 st.title("Analysis")
 
@@ -28,7 +28,8 @@ else:
         if fits_in_context(cleaned_text):
             st.success("Document fits in one request.")
         else:
-            st.error(f"Too long — {token_count:,} tokens exceeds the {MAX_TOKENS:,} limit. Needs chunking.")
+            chunks = chunk_text(cleaned_text)
+            st.warning(f"Document too long — split into {len(chunks)} chunks of ~{count_tokens(cleaned_text) // len(chunks):,} tokens each.")
 
         st.divider()
         st.subheader("Original text")

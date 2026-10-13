@@ -1,12 +1,21 @@
+import json
+
 import tiktoken
+from openai import OpenAI
 from pydantic import ValidationError
 from src.models import AnalysisResult
 
 # The encoding for GPT-4o — tells tiktoken how to split text into tokens
 ENCODING = tiktoken.encoding_for_model("gpt-4o")
 
-# GPT-4o context window limit
+# GPT-4o context window limit (input)
 MAX_TOKENS = 128_000
+
+# GPT-4o maximum response size (output)
+MAX_OUTPUT_TOKENS = 16_384
+
+# Safe chunk size — leave room for the model's response
+CHUNK_SIZE = MAX_TOKENS - MAX_OUTPUT_TOKENS  # 111,616 tokens per chunk
 
 
 def count_tokens(text: str) -> int:
@@ -17,6 +26,34 @@ def count_tokens(text: str) -> int:
 def fits_in_context(text: str) -> bool:
     """Returns True if the text fits in one GPT-4o request."""
     return count_tokens(text) <= MAX_TOKENS
+
+
+def chunk_text(text: str) -> list[str]:
+    """Split text into chunks that each fit within CHUNK_SIZE tokens.
+
+    Splits by paragraph so chunks don't cut in the middle of a sentence.
+    Each chunk keeps adding paragraphs until the next one would exceed
+    CHUNK_SIZE — then it starts a new chunk.
+    """
+    paragraphs = text.split("\n\n")
+    chunks = []
+    current_chunk = ""
+
+    for paragraph in paragraphs:
+        candidate = current_chunk + "\n\n" + paragraph if current_chunk else paragraph
+        if count_tokens(candidate) > CHUNK_SIZE:
+            # Current chunk is full — save it and start a new one
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = paragraph
+        else:
+            current_chunk = candidate
+
+    # Don't forget the last chunk
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks
 
 
 def extract_text(file) -> str:
@@ -44,22 +81,27 @@ def clean_text(text: str) -> str:
 
 
 def analyze(text: str) -> AnalysisResult:
-    # Mock response — will be replaced with a real OpenAI call in the next step
-    mock_llm_response = {
-        "summary": (
-            "This document has been processed by the analyzer. "
-            "A real summary will appear once the OpenAI integration is added."
-        ),
-        "key_points": [
-            "The document was successfully uploaded and cleaned.",
-            "Pydantic is validating the structure of this response.",
-            "Replace this mock with a real API call in the next step.",
-        ],
-        "confidence": 0.75,
-    }
+    prompt = (
+        "Analyze the document below. Reply with ONLY a JSON object with exactly "
+        "these fields:\n"
+        '- "summary": a concise summary of the document (string)\n'
+        '- "key_points": the most important points, one per list item (list of strings)\n'
+        '- "confidence": your confidence in this analysis, from 0.0 to 1.0 (float)\n\n'
+        f"Document:\n{text}"
+    )
 
+    # Reads the API key from the OPENAI_API_KEY environment variable
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,  # low = consistent, repeatable summaries, not creative ones
+        response_format={"type": "json_object"},
+    )
+
+    raw_json = response.choices[0].message.content
     # model_validate() builds the object AND runs all validators
-    return AnalysisResult.model_validate(mock_llm_response)
+    return AnalysisResult.model_validate(json.loads(raw_json))
 
 
 def result_to_dict(result: AnalysisResult) -> dict:
