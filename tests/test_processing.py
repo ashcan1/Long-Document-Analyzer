@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+from src.models import AnalysisResult
 from src.processing import analyze, clean_text, extract_text
 
 
@@ -26,22 +27,21 @@ def test_clean_text_removes_extra_whitespace_without_changing_words():
 
 
 def test_analyze_parses_openai_response_into_analysis_result():
-    """analyze() should send temperature=0.2 and parse the JSON reply."""
-    fake_response = MagicMock()
-    fake_response.choices[0].message.content = (
-        '{"summary": "A sufficiently long summary.", '
-        '"key_points": ["point one"], "confidence": 0.9}'
+    """analyze() should send temperature=0.2 and return the parsed Structured Output."""
+    expected = AnalysisResult(
+        summary="A sufficiently long summary.", key_points=["point one"], confidence=0.9
     )
+    fake_response = MagicMock()
+    fake_response.choices[0].message.parsed = expected
     mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = fake_response
+    mock_client.chat.completions.parse.return_value = fake_response
 
     with patch("src.processing.OpenAI", return_value=mock_client):
         result = analyze("Some document text")
 
-    assert result.summary == "A sufficiently long summary."
-    assert result.key_points == ["point one"]
-    assert result.confidence == 0.9
-    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert result == expected
+    call_kwargs = mock_client.chat.completions.parse.call_args.kwargs
     assert call_kwargs["temperature"] == 0.2
+    assert call_kwargs["response_format"] is AnalysisResult
     assert "top_p" not in call_kwargs
 

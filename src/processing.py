@@ -1,5 +1,3 @@
-import json
-
 import tiktoken
 from openai import OpenAI
 from pydantic import ValidationError
@@ -82,26 +80,21 @@ def clean_text(text: str) -> str:
 
 def analyze(text: str) -> AnalysisResult:
     prompt = (
-        "Analyze the document below. Reply with ONLY a JSON object with exactly "
-        "these fields:\n"
-        '- "summary": a concise summary of the document (string)\n'
-        '- "key_points": the most important points, one per list item (list of strings)\n'
-        '- "confidence": your confidence in this analysis, from 0.0 to 1.0 (float)\n\n'
-        f"Document:\n{text}"
+        "Analyze the document below and extract a summary, the key points, "
+        f"and your confidence in the analysis.\n\nDocument:\n{text}"
     )
 
     # Reads the API key from the OPENAI_API_KEY environment variable
     client = OpenAI()
-    response = client.chat.completions.create(
+    response = client.chat.completions.parse(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,  # low = consistent, repeatable summaries, not creative ones
-        response_format={"type": "json_object"},
+        response_format=AnalysisResult,  # Structured Outputs — reply is guaranteed to match this schema
     )
 
-    raw_json = response.choices[0].message.content
-    # model_validate() builds the object AND runs all validators
-    return AnalysisResult.model_validate(json.loads(raw_json))
+    # .parsed is already a validated AnalysisResult instance
+    return response.choices[0].message.parsed
 
 
 def result_to_dict(result: AnalysisResult) -> dict:
