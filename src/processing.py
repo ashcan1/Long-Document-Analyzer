@@ -1,3 +1,5 @@
+import os
+
 import tiktoken
 from openai import OpenAI
 from pydantic import ValidationError
@@ -84,7 +86,14 @@ def analyze(text: str) -> AnalysisResult:
         f"and your confidence in the analysis.\n\nDocument:\n{text}"
     )
 
-    # Reads the API key from the OPENAI_API_KEY environment variable
+    # Falls back to .streamlit/secrets.toml if OPENAI_API_KEY isn't set as an env var
+    if "OPENAI_API_KEY" not in os.environ:
+        import streamlit as st
+
+        secret_key = st.secrets.get("OPENAI_API_KEY")
+        if secret_key:
+            os.environ["OPENAI_API_KEY"] = secret_key
+
     client = OpenAI()
     response = client.chat.completions.parse(
         model="gpt-4o",
