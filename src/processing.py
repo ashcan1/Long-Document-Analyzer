@@ -1,3 +1,4 @@
+import json
 import os
 
 import tiktoken
@@ -82,28 +83,37 @@ def clean_text(text: str) -> str:
 
 def analyze(text: str) -> AnalysisResult:
     prompt = (
-        "Analyze the document below and extract a summary, the key points, "
-        f"and your confidence in the analysis.\n\nDocument:\n{text}"
+        "Analyze the document below. Reply with ONLY a JSON object with exactly "
+        "these fields:\n"
+        '- "summary": a concise summary of the document (string)\n'
+        '- "key_points": the most important points, one per list item (list of strings)\n'
+        '- "confidence": your confidence in this analysis, from 0.0 to 1.0 (float)\n\n'
+        f"Document:\n{text}"
     )
 
-    # Falls back to .streamlit/secrets.toml if OPENAI_API_KEY isn't set as an env var
-    if "OPENAI_API_KEY" not in os.environ:
-        import streamlit as st
+    # Environment variables take precedence over Streamlit secrets.
+    import streamlit as st
 
-        secret_key = st.secrets.get("OPENAI_API_KEY")
-        if secret_key:
-            os.environ["OPENAI_API_KEY"] = secret_key
+    api_key = os.environ.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured.")
 
-    client = OpenAI()
-    response = client.chat.completions.parse(
-        model="gpt-4o",
+    model = os.environ.get("GROQ_MODEL") or st.secrets.get(
+        "GROQ_MODEL", "openai/gpt-oss-120b"
+    )
+
+    # Groq's free-tier endpoint — OpenAI-compatible, swap base_url/key to switch providers
+    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
+    response = client.chat.completions.create(
+        model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,  # low = consistent, repeatable summaries, not creative ones
-        response_format=AnalysisResult,  # Structured Outputs — reply is guaranteed to match this schema
+        response_format={"type": "json_object"},
     )
 
-    # .parsed is already a validated AnalysisResult instance
-    return response.choices[0].message.parsed
+    raw_json = response.choices[0].message.content
+    # model_validate() builds the object AND runs all validators
+    return AnalysisResult.model_validate(json.loads(raw_json))
 
 
 def result_to_dict(result: AnalysisResult) -> dict:

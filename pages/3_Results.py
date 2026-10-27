@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from src.models import AnalysisResult
 from src.processing import analyze, extract_text, clean_text, result_to_json
+from src.utils import file_fingerprint
 
 st.title("Results")
 
@@ -11,6 +12,11 @@ if uploaded_file is None:
     st.warning("Upload a document first on the Upload page.")
     st.stop()
 
+# Never display a result generated for a different document.
+current_fingerprint = file_fingerprint(uploaded_file)
+if current_fingerprint != st.session_state.get("analysis_result_fingerprint"):
+    st.session_state.pop("analysis_result", None)
+
 # --- Run analysis ---
 if st.button("Analyze document"):
     try:
@@ -18,6 +24,7 @@ if st.button("Analyze document"):
         cleaned = clean_text(raw_text)
         result: AnalysisResult = analyze(cleaned)
         st.session_state["analysis_result"] = result
+        st.session_state["analysis_result_fingerprint"] = current_fingerprint
         st.success("Analysis complete.")
     except ValidationError as e:
         st.error("Pydantic ValidationError — invalid data returned.")
